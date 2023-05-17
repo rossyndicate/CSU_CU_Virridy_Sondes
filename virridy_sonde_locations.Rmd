@@ -1,0 +1,59 @@
+---
+title: "CU/Virridy X ROSS Sonde Locations for Cameron Peak Study"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include= FALSE }
+knitr::opts_chunk$set(echo = TRUE)
+source("package_loader.R")
+
+`%nin%` = Negate(`%in%`)
+
+colorize <- function(x, color) {
+  if (knitr::is_latex_output()) {
+    sprintf("\\textcolor{%s}{%s}", color, x)
+  } else if (knitr::is_html_output()) {
+    sprintf("<span style='color: %s;'>%s</span>", color,
+      x)
+  } else x
+}
+
+# Load data from sonde_locations.csv 
+sonde_locations <- read.csv("data/potential_sonde_locations.csv", header = TRUE)%>%
+  # seperate lat and long into seperate columns using , as a delimiter
+    separate(lat_long, c("lat", "long"), sep = ",")%>%
+    # convert lat and long to numeric
+    mutate(lat = as.numeric(lat), long = as.numeric(long))%>%
+    # using lat and long convert the dataframe into a sf object projected to crs 4326
+    st_as_sf(coords = c("long", "lat"), crs = 4326)%>%
+    #rename the column CPRW. to CPRW_Sensor?
+    rename(CPRW_Sensor = CPRW.)
+
+    #Create a map of the sonde locations using mapview
+    # color blue if CPRW_Sensor = yes and don't color if CPRW_Sensor = no
+    
+
+```
+
+## WQ Sonde Locations
+
+-   [Current Upper Water Quality Network:]{style="color:red"} Currently installed water quality sensors by City of Fort Collins
+
+-   [Proposed Upper Water Quality Network:]{style="color:blue"} Sites identified by ROSS and are planned installs for this year. Most are co-located with Larimer County, USGS or DWR discharge gauges.
+
+-   [Current ROSS Network:]{style="color:#43B54C"} Also known as the Poudre Water Quality Network. These are our currently installed water quality sensors upstream, within and downstream the City of Fort Collins
+
+-   [Proposed Lower Water Quality Network:]{style="color:orange"} Additional streams ROSS highlighted for additional CU/Virridy sondes
+
+```{r, echo = FALSE, out.width="100%"}
+
+   
+      mapview::mapview(filter(sonde_locations, Final == "Yes" & Installed == "FCGOV"), layer.name = "Current Upper WQ Network",col.regions = "red1", cex = 8)+
+    mapview::mapview(filter(sonde_locations,Final == "Yes"& Installed == "No"), layer.name = "Proposed Upper WQ Network",col.regions = "blue", cex = 8)+
+ 
+        mapview::mapview(filter(sonde_locations, Final == "Yes"&Installed == "Yes"), layer.name = "Current Lower WQ Network",col.regions = "#43B54C", cex = 8)+
+         mapview::mapview(filter(sonde_locations,site_name == "Spring Creek"|site_name == "Boxelder Creek"), layer.name = "Proposed Lower WQ Network",col.regions = "orange", cex = 8)
+  
+  
+```

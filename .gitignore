@@ -1,0 +1,7 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+data/
+package_loader.R
+virridy_sonde_locations.html
