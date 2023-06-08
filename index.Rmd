@@ -28,7 +28,8 @@ sonde_locations <- read.csv("data/potential_sonde_locations.csv", header = TRUE)
     # using lat and long convert the dataframe into a sf object projected to crs 4326
     st_as_sf(coords = c("long", "lat"), crs = 4326)%>%
     #rename the column CPRW. to CPRW_Sensor?
-    rename(CPRW_Sensor = CPRW.)
+    rename(CPRW_Sensor = CPRW.)%>%
+  select(site_name, site_impacts, site_abbreviation, site_description, colocation_gauge, Final, Installed)
 
     #Create a map of the sonde locations using mapview
     # color blue if CPRW_Sensor = yes and don't color if CPRW_Sensor = no
