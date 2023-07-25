@@ -4,20 +4,11 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
-```{r setup, include= FALSE }
+```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 source("package_loader.R")
 
 `%nin%` = Negate(`%in%`)
-
-colorize <- function(x, color) {
-  if (knitr::is_latex_output()) {
-    sprintf("\\textcolor{%s}{%s}", color, x)
-  } else if (knitr::is_html_output()) {
-    sprintf("<span style='color: %s;'>%s</span>", color,
-      x)
-  } else x
-}
 
 # Load data from sonde_locations.csv 
 sonde_locations <- read.csv("data/potential_sonde_locations.csv", header = TRUE)%>%
@@ -27,34 +18,34 @@ sonde_locations <- read.csv("data/potential_sonde_locations.csv", header = TRUE)
     mutate(lat = as.numeric(lat), long = as.numeric(long))%>%
     # using lat and long convert the dataframe into a sf object projected to crs 4326
     st_as_sf(coords = c("long", "lat"), crs = 4326)%>%
-    #rename the column CPRW. to CPRW_Sensor?
-    rename(CPRW_Sensor = CPRW.)%>%
-  select(site_name, site_impacts, site_abbreviation, site_description, colocation_gauge, Final, Installed)
+
+    select(site_abbreviation, site_description,sensor_setup, parameters,  colocation_gauge, site_name, network, Installed)
 
     #Create a map of the sonde locations using mapview
     # color blue if CPRW_Sensor = yes and don't color if CPRW_Sensor = no
     
 
+clp_flowlines <- st_read("data/clp_flowlines")
 ```
 
-## WQ Sonde Locations
 
--   [Current Upper Water Quality Network:]{style="color:red"} Currently installed water quality sensors by City of Fort Collins
 
--   [Proposed Upper Water Quality Network:]{style="color:blue"} Sites identified by ROSS and are planned installs for this year. Most are co-located with Larimer County, USGS or DWR discharge gauges.
+```{r maps, echo=FALSE, out.width="100%"}
 
--   [Current ROSS Network:]{style="color:#43B54C"} Also known as the Poudre Water Quality Network. These are our currently installed water quality sensors upstream, within and downstream the City of Fort Collins
+ map <- mapview(filter(sonde_locations, site_name == "USGS -  Joe Wright Res inflow"), layer.name = "Proposed JOEI",col.regions = "#34b1eb", cex = 8)+
+  mapview(filter(sonde_locations, site_name == "USGS - JWCBJW"), layer.name = "Proposed CBRI",col.regions = "green4", cex = 8)+
+  mapview(filter(sonde_locations, site_name == "Larimer - Chambers"), layer.name = "Proposed CHD",col.regions = "orange", cex = 8)+
+    mapview(filter(sonde_locations, site_name == "Larimer- Poudre Falls"), layer.name = "Proposed PFAL",col.regions = "yellow", cex = 8)+
 
--   [Proposed Lower Water Quality Network:]{style="color:orange"} Additional streams ROSS highlighted for additional CU/Virridy sondes
-
-```{r, echo = FALSE, out.width="100%"}
-
-   
-      mapview::mapview(filter(sonde_locations, Final == "Yes" & Installed == "FCGOV"), layer.name = "Current Upper WQ Network",col.regions = "red1", cex = 8)+
-    mapview::mapview(filter(sonde_locations,Final == "Yes"& Installed == "No"), layer.name = "Proposed Upper WQ Network",col.regions = "blue", cex = 8)+
- 
-        mapview::mapview(filter(sonde_locations, Final == "Yes"&Installed == "Yes"), layer.name = "Current Lower WQ Network",col.regions = "#43B54C", cex = 8)+
-         mapview::mapview(filter(sonde_locations,site_name == "Spring Creek"|site_name == "Boxelder Creek"), layer.name = "Proposed Lower WQ Network",col.regions = "orange", cex = 8)
+   mapview(filter(sonde_locations, site_name == "Little Beaver Creek"), layer.name = "Proposed LBEA",col.regions = "red1", cex = 8)+
+      mapview(filter(sonde_locations, site_name == "Larimer - SF Poudre at Pingree Park Road"), layer.name = "Proposed SFM",col.regions = "red3", cex = 8)+
+  mapview(filter(sonde_locations, site_name == "DWR- CLASRKCO "), layer.name = "Proposed SFM Downstream",col.regions = "red4", cex = 8)+
+  mapview(filter(sonde_locations, Installed == "FCGOV"), layer.name = "Existing City of Fort Collins  Monitoring",col.regions = "#34ebba", cex = 8, alpha.regions = 1)+
+        mapview(filter(sonde_locations, site_name == "DWR - CLAFTCCO"), layer.name = "Proposed PBD",col.regions = "purple1", cex = 8)+
+        mapview(filter(sonde_locations, network == "Lower" & site_abbreviation %nin% c("SPRC", "BOXE")), layer.name = "Current Lower Network",col.regions = "blue", cex = 8)+
+  mapview(filter(sonde_locations, network == "Lower" & site_abbreviation %in% c("SPRC", "BOXE")), layer.name = "Proposed Lower Network",col.regions = "green", cex = 8)
   
-  
+
+map
 ```
+
