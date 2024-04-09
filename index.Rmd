@@ -32,18 +32,11 @@ clp_flowlines <- st_read("data/clp_flowlines")
 
 ```{r maps, echo=FALSE, out.width="100%"}
 
- map <- mapview(filter(sonde_locations, site_name == "USGS -  Joe Wright Res inflow"), layer.name = "Proposed JOEI",col.regions = "#34b1eb", cex = 8)+
-  mapview(filter(sonde_locations, site_name == "USGS - JWCBJW"), layer.name = "Proposed CBRI",col.regions = "green4", cex = 8)+
-  mapview(filter(sonde_locations, site_name == "Larimer - Chambers"), layer.name = "Proposed CHD",col.regions = "orange", cex = 8)+
-    mapview(filter(sonde_locations, site_name == "Larimer- Poudre Falls"), layer.name = "Proposed PFAL",col.regions = "yellow", cex = 8)+
-
-   mapview(filter(sonde_locations, site_name == "Little Beaver Creek"), layer.name = "Proposed LBEA",col.regions = "red1", cex = 8)+
-      mapview(filter(sonde_locations, site_name == "Larimer - SF Poudre at Pingree Park Road"), layer.name = "Proposed SFM",col.regions = "red3", cex = 8)+
-  mapview(filter(sonde_locations, site_name == "DWR- CLASRKCO "), layer.name = "Proposed SFM Downstream",col.regions = "red4", cex = 8)+
-  mapview(filter(sonde_locations, Installed == "FCGOV"), layer.name = "Existing City of Fort Collins  Monitoring",col.regions = "#34ebba", cex = 8, alpha.regions = 1)+
-        mapview(filter(sonde_locations, site_name == "DWR - CLAFTCCO"), layer.name = "Proposed PBD",col.regions = "purple1", cex = 8)+
-        mapview(filter(sonde_locations, network == "Lower" & site_abbreviation %nin% c("SPRC", "BOXE")), layer.name = "Current Lower Network",col.regions = "blue", cex = 8)+
-  mapview(filter(sonde_locations, network == "Lower" & site_abbreviation %in% c("SPRC", "BOXE")), layer.name = "Proposed Lower Network",col.regions = "green", cex = 8)
+ map <- mapview(filter(sonde_locations, network == "Upper" & site_abbreviation %nin% c("PENN", "LBEA")), layer.name = "CSU X CU Upper",col.regions = "purple", cex = 8)+
+  mapview(filter(sonde_locations, site_abbreviation %in% c("PENN", "LBEA")), layer.name = "Burned Study Tributaries",col.regions = "red", cex = 8)+
+        mapview(filter(sonde_locations, network == "Lower" & site_abbreviation %nin% c("Lincoln","Timberline","Prospect", "Archery")), layer.name = "CSU Lower",col.regions = "cyan", cex = 6)+
+  mapview(filter(sonde_locations, network == "Lower" & site_abbreviation %in% c("Lincoln","Timberline","Prospect", "Archery")), layer.name = "CSU X CU Lower",col.regions = "blue", cex = 8)+
+  mapview(filter(sonde_locations, site_abbreviation %in% c("SpringCreek", "BoxCreek")), layer.name = "Lower Network Tributaries",col.regions = "green", cex = 8)
   
 
 map
