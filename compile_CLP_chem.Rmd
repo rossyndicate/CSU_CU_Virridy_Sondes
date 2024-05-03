@@ -50,31 +50,31 @@ sites <- c("JOEI", "CBRI", "CHD",
            "PBD", "Lincoln", "Timberline", "Prospect","Boxelder",  "Archery", 
            "BoxCreek", "SpringCreek")
 
-#Just for testing
-#sites_oi <- c("prospect", "archery")
-# Read in HydroVu Creds from credentials.yml
-hv_creds <- read_yaml("scripts/api_pull/credentials.yml")
-hv_token <- hv_auth(client_id = as.character(hv_creds["client"]),
-                      client_secret = as.character(hv_creds["secret"]),
-                      url = "https://www.hydrovu.com/public-api/oauth/token")
-
 ```
 
 ### Set start and end time for API grab
 ```{r}
+
 # Grab sample + sensors started in late August 2023, we will grab from the start of the month to be safe
-start_dt <- ymd_hms("2023-08-01 00:00:00", tz = "MST")
-# End date is the day after the last sample was grabbed
-end_dt <- Sys.Date()
+# start_dt <- ymd_hms("2023-08-01 00:00:00", tz = "MST")
+# # End date is the day after the last sample was grabbed
+# end_dt <- Sys.Date()
 
 ```
 ## Pull HydroVu Api
 
 ```{r}
-source("scripts/api_pull/api_puller.R")
-source("scripts/api_pull/hv_locations_all.R")
-source("scripts/api_pull/hv_getdata_id.R")
-source("scripts/api_pull/munge_api_data.R")
+# source("scripts/api_pull/api_puller.R")
+# source("scripts/api_pull/hv_locations_all.R")
+# source("scripts/api_pull/hv_getdata_id.R")
+
+# # Read in HydroVu Creds from credentials.yml
+# hv_creds <- read_yaml("scripts/api_pull/credentials.yml")
+# hv_token <- hv_auth(client_id = as.character(hv_creds["client"]),
+#                       client_secret = as.character(hv_creds["secret"]),
+#                       url = "https://www.hydrovu.com/public-api/oauth/token")
+# 
+
 #grab data
 # grab <- map(sites_oi,~ api_puller(site = .x,
 #                  start_dt = start_dt,
@@ -84,7 +84,8 @@ source("scripts/api_pull/munge_api_data.R")
 
 
 #import data from API folder
-sensor_data <- munge_api_data(api_path = "data/api")
+source("scripts/api_pull/munge_api_data.R")
+sensor_data <- munge_api_data(api_path = "data/hydrovu_api")
 
 ```
 ## Pull in SFM data from GH
@@ -230,7 +231,7 @@ grabs_at_sensors <- most_recent_chem%>%
     select(site, grab_dt, data, everything())%>%
     arrange(site, grab_dt)
   
-write_csv(correlated_df, "data/combined/correlated_data.csv")
+write_rds(tidy_correlated_df, "data/combined/correlated_data.rds")
 ```
 
 
