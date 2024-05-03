@@ -80,7 +80,7 @@ source("scripts/api_pull/munge_api_data.R")
 #                  start_dt = start_dt,
 #                  end_dt = end_dt, 
 #                  api_token = hv_token,
-#                  dump_dir = "data/api"))
+#                  dump_dir = "data/hydrovu_api"))
 
 
 #import data from API folder
@@ -123,7 +123,7 @@ sfm_data <- bind_rows(sfm_2023_data, sfm_2024_data)%>%
   distinct()
   
 
-  write_csv(sfm_data, "data/sfm_data.csv")
+  write_csv(sfm_data, "data/compiled_sfm_data.csv")
   rm(sfm_2023_data, sfm_2024_data, con)
 ```
 
