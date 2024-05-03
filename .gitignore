@@ -5,3 +5,7 @@
 data/
 package_loader.R
 virridy_sonde_locations.html
+
+scripts/api_pull/credentials.yml
+scripts/api_pull/unused
+.DS_Store
