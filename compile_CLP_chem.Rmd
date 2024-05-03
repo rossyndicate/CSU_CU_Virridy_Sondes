@@ -1,0 +1,239 @@
+---
+title: "Compile Poudre Water Chemistry"
+author: "Sam Struthers- CSU ROSSyndicate"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+## Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+source("scripts/00_setup.R")
+
+```
+
+# Import Water Chemistry Dataset
+ If new data is published, the DOI and data version need to match the most recent publication on Zenodo
+
+```{r pressure, echo=FALSE}
+
+#discrete sample data and location metadata from most recent pub
+
+DOI = "11110885"
+data_version = "v2024.04.16b"
+
+
+source("scripts/grab_zenodo_data.R")
+
+# all_params <- chem_units%>%
+#   pull(simple)
+```
+
+# Grab Sensor Data
+Sensor data comes in two sources: Livestreamed data to HydroVu and data which is sent via radio network (operated by WET and Novastar)
+
+## Grab HydroVu Data
+
+### Setup
+
+```{r}
+
+# Only grab sites in the chemistry dataset that have a sonde
+sites_oi <- most_recent_chem%>%
+  filter(!is.na(WQ_sensor)& site_code %nin% c("PNF", "PBR", "PFAL", "ELC", "SFM", "legacy") )%>%
+  pull(site_code)%>%
+  unique()
+
+sites <- c("JOEI", "CBRI", "CHD", 
+           # Not yet uploading to HydroVu: "PFAL", "SFM", "LBEA", "PENN", 
+           "PBD", "Lincoln", "Timberline", "Prospect","Boxelder",  "Archery", 
+           "BoxCreek", "SpringCreek")
+
+#Just for testing
+#sites_oi <- c("prospect", "archery")
+# Read in HydroVu Creds from credentials.yml
+hv_creds <- read_yaml("scripts/api_pull/credentials.yml")
+hv_token <- hv_auth(client_id = as.character(hv_creds["client"]),
+                      client_secret = as.character(hv_creds["secret"]),
+                      url = "https://www.hydrovu.com/public-api/oauth/token")
+
+```
+
+### Set start and end time for API grab
+```{r}
+# Grab sample + sensors started in late August 2023, we will grab from the start of the month to be safe
+start_dt <- ymd_hms("2023-08-01 00:00:00", tz = "MST")
+# End date is the day after the last sample was grabbed
+end_dt <- Sys.Date()
+
+```
+## Pull HydroVu Api
+
+```{r}
+source("scripts/api_pull/api_puller.R")
+source("scripts/api_pull/hv_locations_all.R")
+source("scripts/api_pull/hv_getdata_id.R")
+source("scripts/api_pull/munge_api_data.R")
+#grab data
+# grab <- map(sites_oi,~ api_puller(site = .x,
+#                  start_dt = start_dt,
+#                  end_dt = end_dt, 
+#                  api_token = hv_token,
+#                  dump_dir = "data/api"))
+
+
+#import data from API folder
+sensor_data <- munge_api_data(api_path = "data/api")
+
+```
+## Pull in SFM data from GH
+
+```{r}
+# download directly from a GH repository named SamStruthers/ross_sfm, this is a public repo where I backup the livestreaming data from SFM
+
+# Open a connection to the URL
+con <- url("https://github.com/SamStruthers/Sonde_livestream_backup/raw/main/data/archive/SF_data_archive2023.RDS", "rb")
+# Read the RDS file directly from the connection
+sfm_2023_data <- readRDS(gzcon(con))%>%
+  distinct()
+
+# Open a connection to the URL
+con <- url("https://github.com/SamStruthers/Sonde_livestream_backup/raw/main/data/SF_data_archive2024.RDS", "rb")
+# Read the RDS file directly from the connection
+sfm_2024_data <- readRDS(gzcon(con))%>%
+  distinct()
+
+sfm_data <- bind_rows(sfm_2023_data, sfm_2024_data)%>%
+  mutate(site = "sfm", 
+#fixing parameter names
+         parameter = case_when( Measurement == "Temperature" ~ "ross_temp",
+                                Measurement == "pH" ~ "ross_pH",
+                                Measurement == "DO" ~ "ross_DO",
+                                Measurement == "DO_Sat" ~ "ross_DO_sat",
+                                Measurement == "Actual_Conductivity" ~ "ross_turb",
+                                Measurement == "Specific_Conductivity" ~ "ross_spec_cond",
+                                Measurement == "Turbidity" ~ "ross_turb",
+                                Measurement == "Chl-a" ~ "ross_chla",
+                                Measurement == "FDOM" ~ "ross_FDOM",
+                                Measurement == "Depth" ~ "ross_depth",
+                                TRUE ~ NA))%>%
+        
+  select(site, DT, DT_round, value = Value, parameter)%>%
+  distinct()
+  
+
+  write_csv(sfm_data, "data/sfm_data.csv")
+  rm(sfm_2023_data, sfm_2024_data, con)
+```
+
+
+
+## Tidying hydrovu data
+
+```{r}
+
+long_sensor_data <- sensor_data%>%
+  filter(!is.na(value))%>%
+  #rename parameter for sites where sondes are colocated
+  left_join(sensor_meta%>% select(param_sonde, param_common), by = c("parameter" = "param_sonde"))%>%
+  mutate(parameter = case_when(grepl("virridy", name, ignore.case = TRUE) ~ paste0("virridy_", param_common),
+                           TRUE ~ paste0("ross_", param_common)))%>% 
+  select(site, DT, DT_round,  value, parameter)%>%
+  rbind(sfm_data)
+
+wide_sensor_data <- long_sensor_data%>%
+  pivot_wider(names_from = parameter, values_from = value, id_cols = c(site, DT))
+
+
+```
+
+## Joining datasets
+
+```{r}
+
+sites <- c("JOEI", "CBRI", "CHD", 
+           "PFAL", "SFM", "LBEA", "PENN", 
+           "PBD", "lincoln", "timberline", "prospect","boxelder",  "archery", 
+           "boxcreek", "springcreek")
+
+
+grabs_at_sensors <- most_recent_chem%>%
+  #remove data before sensor data starts
+  filter( site_code %in% sites, DT_mst >= min(wide_sensor_data$DT))%>%
+  #lower case to match sensor data
+  mutate(site_code = tolower(site_code), 
+         grab_dt = round_date(DT_mst, "15 minutes"))%>%
+  select(site_code, grab_dt, Turbidity:SO4, Field_DO_mgL,Field_Cond_µS_cm,Field_Temp_C )
+
+
+  merge_grab_sensor <- function( grab_dt, site_select){
+    # convert to date to filter sensor data to only data on same date as sample
+    grab_date = as.Date(grab_dt, tz = "MST")
+    
+    # grab data from 4 data points after a site visit
+      after_data <- wide_sensor_data %>%
+        #create date for match up
+        mutate(date = as.Date(DT, tz = "MST")) %>%
+        filter(grepl(site_select, site, ignore.case = TRUE) & date == grab_date & DT > grab_dt )%>%
+        dplyr::arrange(DT)%>%
+        # grab the data 4 data points after a site visit
+        dplyr::slice_head(n = 4)
+      
+        #grab data before grab sample time, this is to be used for when a sonde was pulled, essentially reference data prior to the sonde being pulled rather than after
+        before_data <- wide_sensor_data %>%
+          #create date for match up
+          mutate(date = as.Date(DT, tz = "MST")) %>%
+          filter(grepl(site_select, site, ignore.case = TRUE) & date == grab_date & DT < grab_dt )%>%
+          dplyr::arrange(DT)%>%
+          # grab the data missing data points from after_data to make sure we have 4 data points
+          dplyr::slice_tail(n = (4- nrow(after_data)) )
+    
+        
+        #bind data together
+        select_sensor_data <- bind_rows(before_data, after_data)
+        #create a nested data frame for the sensor data
+        nest_data <- select_sensor_data%>%nest()
+        
+        if(nrow(select_sensor_data) == 0){
+          
+          select_sensor_data%>%
+       # take the median of all sensor values
+       summarise_if(is.numeric, median, na.rm = TRUE)%>%
+       #add site and grab_dt back in
+       mutate(site = site_select, grab_dt = grab_dt)
+        }else{
+       select_sensor_data%>%
+       # take the median of all sensor values
+       summarise_if(is.numeric, median, na.rm = TRUE)%>%
+       #add site and grab_dt back in
+       mutate(site = site_select, grab_dt = grab_dt)%>%
+            #add the nested data for future reference
+            bind_cols(nest_data)
+      
+        }
+  }
+    
+      
+  correlated_df <- grabs_at_sensors%>%
+    #grab only dt and site from discrete samples for calculate avg fucn
+    select(grab_dt, site_select = site_code)%>%
+    # map over calc avg fucn
+    pmap_dfr(., merge_grab_sensor)%>%
+    filter(rowSums(!is.na(select(., -grab_dt, -site))) > 0)%>%
+    # join with lab data by site and grab dt
+    left_join(grabs_at_sensors, by = c("grab_dt", "site" = "site_code"))
+  
+  tidy_correlated_df <- correlated_df%>%
+    #remove sites with no sensor data
+     filter(map_lgl(data, ~!is.null(.)))%>%
+    select(site, grab_dt, data, everything())%>%
+    arrange(site, grab_dt)
+  
+write_csv(correlated_df, "data/combined/correlated_data.csv")
+```
+
+
+
+
+
