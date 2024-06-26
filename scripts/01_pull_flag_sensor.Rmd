@@ -16,7 +16,7 @@ source("scripts/00_setup.R")
 # Import Water Chemistry Dataset
  If new data is published, the DOI and data version need to match the most recent publication on Zenodo
 
-```{r pressure, echo=FALSE}
+```{r loading_data, echo=FALSE}
 
 #discrete sample data and location metadata from most recent pub
 
@@ -35,6 +35,8 @@ Sensor data comes in two sources: Livestreamed data to HydroVu and data which is
 
 ## Grab HydroVu Data
 
+This will all be replaced by QAQC code written by Katie and Juan
+
 ### Setup
 
 ```{r}
@@ -45,8 +47,8 @@ sites_oi <- most_recent_chem%>%
   pull(site_code)%>%
   unique()
 
-sites <- c("JOEI", "CBRI", "CHD", 
-           # Not yet uploading to HydroVu: "PFAL", "SFM", "LBEA", "PENN", 
+sites <- c("JOEI", "CBRI", "CHD", "PFAL",
+           "SFM", "LBEA", "PENN", 
            "PBD", "Lincoln", "Timberline", "Prospect","Boxelder",  "Archery", 
            "BoxCreek", "SpringCreek")
 
@@ -90,6 +92,8 @@ sensor_data <- munge_api_data(api_path = "data/hydrovu_api")
 ```
 ## Pull in SFM data from GH
 
+Since the grab dataset will not be fully up to date, we can probably just pull in data from  HydroVu rather than GH livestream
+
 ```{r}
 # download directly from a GH repository named SamStruthers/ross_sfm, this is a public repo where I backup the livestreaming data from SFM
 
@@ -125,6 +129,7 @@ sfm_data <- bind_rows(sfm_2023_data, sfm_2024_data)%>%
   
 
   write_csv(sfm_data, "data/compiled_sfm_data.csv")
+  sfm_data <- read_csv("data/compiled_sfm_data.csv")
   rm(sfm_2023_data, sfm_2024_data, con)
 ```
 
@@ -148,6 +153,68 @@ wide_sensor_data <- long_sensor_data%>%
 
 
 ```
+# QAQC
+
+```{r}
+
+```
+
+# Verification
+
+Data gets verified by User and then lives in the `data/verified` folder
+
+```{r}
+
+
+
+```
+
+
+# Read in verified data
+
+
+```{r}
+
+
+# directory with verified data
+ver_dir <- "data/verified/testing"
+
+# List all files in the directory with full paths
+ver_files <- list.files(ver_dir, full.names = TRUE)
+
+# Function to process each file
+grab_verified_data <- function(file_path) {
+  # Extract the site name using the gsub method
+  site_name <- gsub(".*?/|_.*", "", file_path) %>% gsub("-.*", "", .)
+  
+  # Read the data and transform it
+  single_site_param <- readRDS(file_path) %>%
+    filter(!is.na(mean_verified))%>%
+    select(DT_round, parameter, mean_verified) %>%
+    mutate(site = site_name)
+  
+  return(single_site_param)
+}
+
+# Use map_dfr to apply the process_file function to each file and combine the results
+final_sensor_data <- map_dfr(ver_files, grab_verified_data)
+
+wide_final_sensor_data <- final_sensor_data%>%
+  pivot_wider(names_from = parameter, values_from = mean_verified, id_cols = c(site, DT_round))%>%
+  #create date for match up
+        mutate(date = as.Date(DT_round, tz = "MST")) 
+
+
+
+
+```
+
+
+
+
+
+
+
 
 ## Joining datasets
 
@@ -161,11 +228,13 @@ sites <- c("JOEI", "CBRI", "CHD",
 
 grabs_at_sensors <- most_recent_chem%>%
   #remove data before sensor data starts
-  filter( site_code %in% sites, DT_mst >= min(wide_sensor_data$DT))%>%
+  filter( site_code %in% sites, DT_mst >= min(wide_final_sensor_data$DT_round))%>%
   #lower case to match sensor data
   mutate(site_code = tolower(site_code), 
          grab_dt = round_date(DT_mst, "15 minutes"))%>%
-  select(site_code, grab_dt, Turbidity:SO4, Field_DO_mgL,Field_Cond_µS_cm,Field_Temp_C )
+  select(site_code, grab_dt, Turbidity:SO4, Field_DO_mgL,Field_Cond_µS_cm,Field_Temp_C )%>%
+  rename(lab_pH = pH, lab_turbidity = Turbidity)
+
 
 
   merge_grab_sensor <- function( grab_dt, site_select){
@@ -173,20 +242,16 @@ grabs_at_sensors <- most_recent_chem%>%
     grab_date = as.Date(grab_dt, tz = "MST")
     
     # grab data from 4 data points after a site visit
-      after_data <- wide_sensor_data %>%
-        #create date for match up
-        mutate(date = as.Date(DT, tz = "MST")) %>%
-        filter(grepl(site_select, site, ignore.case = TRUE) & date == grab_date & DT > grab_dt )%>%
-        dplyr::arrange(DT)%>%
+      after_data <- wide_final_sensor_data %>%
+        filter(grepl(site_select, site, ignore.case = TRUE) & date == grab_date & DT_round > grab_dt )%>%
+        dplyr::arrange(DT_round)%>%
         # grab the data 4 data points after a site visit
         dplyr::slice_head(n = 4)
       
         #grab data before grab sample time, this is to be used for when a sonde was pulled, essentially reference data prior to the sonde being pulled rather than after
-        before_data <- wide_sensor_data %>%
-          #create date for match up
-          mutate(date = as.Date(DT, tz = "MST")) %>%
-          filter(grepl(site_select, site, ignore.case = TRUE) & date == grab_date & DT < grab_dt )%>%
-          dplyr::arrange(DT)%>%
+        before_data <- wide_final_sensor_data %>%
+          filter(grepl(site_select, site, ignore.case = TRUE) & date == grab_date & DT_round < grab_dt )%>%
+          dplyr::arrange(DT_round)%>%
           # grab the data missing data points from after_data to make sure we have 4 data points
           dplyr::slice_tail(n = (4- nrow(after_data)) )
     
@@ -198,7 +263,7 @@ grabs_at_sensors <- most_recent_chem%>%
         
         if(nrow(select_sensor_data) == 0){
           
-          select_sensor_data%>%
+       select_sensor_data%>%
        # take the median of all sensor values
        summarise_if(is.numeric, median, na.rm = TRUE)%>%
        #add site and grab_dt back in
@@ -228,10 +293,11 @@ grabs_at_sensors <- most_recent_chem%>%
   tidy_correlated_df <- correlated_df%>%
     #remove sites with no sensor data
      filter(map_lgl(data, ~!is.null(.)))%>%
+    filter(!is.null(data))%>%
     select(site, grab_dt, data, everything())%>%
     arrange(site, grab_dt)
   
-write_rds(tidy_correlated_df, "data/combined/correlated_data.rds")
+#write_rds(tidy_correlated_df, "data/combined/correlated_data.rds")
 ```
 
 
