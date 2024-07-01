@@ -6,12 +6,12 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-source("package_loader.R")
-
+source("scripts/00_setup.R")
+library(mapview)
 `%nin%` = Negate(`%in%`)
 
 # Load data from sonde_locations.csv 
-sonde_locations <- read.csv("data/potential_sonde_locations.csv", header = TRUE)%>%
+sonde_locations <- read.csv("data/loc_meta/sonde_locations.csv", header = TRUE)%>%
   # seperate lat and long into seperate columns using , as a delimiter
     separate(lat_long, c("lat", "long"), sep = ",")%>%
     # convert lat and long to numeric
@@ -25,18 +25,18 @@ sonde_locations <- read.csv("data/potential_sonde_locations.csv", header = TRUE)
     # color blue if CPRW_Sensor = yes and don't color if CPRW_Sensor = no
     
 
-clp_flowlines <- st_read("data/clp_flowlines")
+#clp_flowlines <- st_read("data/clp_flowlines")
 ```
 
 
 
 ```{r maps, echo=FALSE, out.width="100%"}
 
- map <- mapview(filter(sonde_locations, network == "Upper" & site_abbreviation %nin% c("PENN", "LBEA")), layer.name = "CSU X CU Upper",col.regions = "purple", cex = 8)+
+ map <- mapview::mapview(filter(sonde_locations, network == "Upper" & site_abbreviation %nin% c("PENN", "LBEA")), layer.name = "CSU X CU Upper",col.regions = "purple", cex = 8)+
   mapview(filter(sonde_locations, site_abbreviation %in% c("PENN", "LBEA")), layer.name = "Burned Study Tributaries",col.regions = "red", cex = 8)+
-        mapview(filter(sonde_locations, network == "Lower" & site_abbreviation %nin% c("Lincoln","Timberline","Prospect", "Archery")), layer.name = "CSU Lower",col.regions = "cyan", cex = 6)+
-  mapview(filter(sonde_locations, network == "Lower" & site_abbreviation %in% c("Lincoln","Timberline","Prospect", "Archery")), layer.name = "CSU X CU Lower",col.regions = "blue", cex = 8)+
-  mapview(filter(sonde_locations, site_abbreviation %in% c("SpringCreek", "BoxCreek")), layer.name = "Lower Network Tributaries",col.regions = "green", cex = 8)
+        mapview::mapview(filter(sonde_locations, network == "Lower" & site_abbreviation %nin% c("Lincoln","Timberline","Prospect", "Archery")), layer.name = "CSU Lower",col.regions = "cyan", cex = 6)+
+  mapview::mapview(filter(sonde_locations, network == "Lower" & site_abbreviation %in% c("Lincoln","Timberline","Prospect", "Archery")), layer.name = "CSU X CU Lower",col.regions = "blue", cex = 8)+
+  mapview::mapview(filter(sonde_locations, site_abbreviation %in% c("SpringCreek", "BoxCreek")), layer.name = "Lower Network Tributaries",col.regions = "green", cex = 8)
   
 
 map
