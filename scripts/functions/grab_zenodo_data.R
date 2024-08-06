@@ -34,7 +34,8 @@
     site_meta_file <- list.files(path = paste0( data_folder, "/data/metadata/"), full.names = TRUE, pattern = "location_metadata")
     units_meta_file <- list.files(path = paste0(data_folder, "/data/metadata/"), full.names = TRUE, pattern = "units")
     
-    most_recent_chem <- readr::read_rds(cleaned_chem_file)
+    most_recent_chem <- readr::read_rds(cleaned_chem_file)%>%
+      mutate(flow_gauge_id = ifelse(flow_gauge_source == "USGS", paste0("0", flow_gauge_id), flow_gauge_id))
     most_recent_meta <- read_csv_arrow(site_meta_file)
     chem_units <- readxl::read_xlsx(units_meta_file)
     # Folder already exists, you may choose to print a message or take other actions
