@@ -10,4 +10,5 @@ scripts/api_pull/unused
 .DS_Store
 *.DS_Store
 scripts/plotter.R
-scripts/02_analysis.Rmd 
+scripts/02_analysis.Rmd
+data
