@@ -12,3 +12,4 @@ scripts/api_pull/unused
 scripts/plotter.R
 scripts/02_analysis.Rmd
 data
+02_analysis.Rmd
