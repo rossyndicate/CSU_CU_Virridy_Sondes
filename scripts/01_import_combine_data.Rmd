@@ -1,0 +1,313 @@
+---
+title: "Compile Poudre Water Chemistry"
+author: "Sam Struthers- CSU ROSSyndicate"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+## Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(dplyr.summarise.inform = FALSE)
+source("scripts/00_setup.R")
+
+```
+
+# Import Water Chemistry Dataset
+
+If new data is published, the DOI and data version need to match the most recent publication on Zenodo
+
+Current release: [link](https://zenodo.org/records/12752311)
+
+```{r loading_data, echo=FALSE}
+
+#discrete sample data and location metadata from most recent pub
+
+
+DOI = "12752311"
+data_version = "v.2024.07.16"
+
+source("scripts/functions/grab_zenodo_data.R")
+
+# all_params <- chem_units%>%
+#   pull(simple)
+
+rm(chem_units)
+```
+
+## Pull in flow data
+
+This chunk will pull in the hourly median for flow data (cfs) from CDWR or USGS gauges for each samples where datetimes are available.
+
+```{r}
+
+gather_q_for_sample <- function(Date, site_code, DT_mst, flow_gauge_source, flow_gauge_id) {
+  #recompile info into a tibble
+  meta <- tibble(site_code = site_code, DT_mst = DT_mst, flow_gauge_source = flow_gauge_source, flow_gauge_id = flow_gauge_id, date = Date) 
+  
+  #skip sites not from USGS or CDWR
+        if(meta$flow_gauge_source %nin% c("USGS", "CDWR")) {
+          return(NULL)
+        }
+  #only run thru days where we have a datetime
+  if(is.na(DT_mst)){
+    return(NULL)
+  }
+  
+        # JOEI gauge down starting 10/17/2023
+  if(meta$site_code == "JOEI" & DT_mst >= ymd_hm("2023-10-17 00:00", tz = "MST")){
+      return(NULL)
+  }
+
+
+  q_data <- tryCatch({
+    if (meta$flow_gauge_source == "USGS") {
+      readNWISuv(siteNumbers = meta$flow_gauge_id,
+                 startDate = meta$date - days(1),
+                 endDate = meta$date + days(1),
+                 parameterCd = "00060", tz = "America/Denver") %>%
+        distinct() %>%
+        mutate(DT_mst = with_tz(dateTime, tzone = "MST"),
+               source = "USGS") %>%
+        select(site = site_no, DT_mst, q_cfs = X_00060_00000, flag = X_00060_00000_cd)
+    } else if (meta$flow_gauge_source == "CDWR") {
+      get_telemetry_ts(
+        abbrev = meta$flow_gauge_id,
+        parameter = "DISCHRG",
+        start_date = meta$date - days(1),
+        end_date = meta$date + days(1),
+        timescale = "raw",
+        include_third_party = TRUE) %>%
+        distinct() %>%
+        mutate(DT_mst = force_tz(datetime, tzone = "MST"),
+               flag = case_when(!is.na(flag_a) & !is.na(flag_b) ~ paste0(flag_a, ",", flag_b),
+                                is.na(flag_a) & !is.na(flag_b) ~ flag_b,
+                                is.na(flag_b) & !is.na(flag_b) ~ flag_a,
+                                TRUE ~ NA_character_),
+               source = "DWR") %>%
+        select(site = abbrev, DT_mst, q_cfs = meas_value, flag, source)
+    }
+  }, error = function(e) {
+    message("Data unavailable for ", meta$site_code, " on ", meta$date)
+    return(NULL)
+    })
+ 
+  if(is.null(q_data)) {
+   return(NULL) 
+  }
+
+    sample_hour <- round_date(meta$DT_mst, "hour")
+        
+    hourly_q_cfs <- q_data %>%
+      mutate(DT_mst = floor_date(DT_mst, "hour")) %>%
+      filter(DT_mst == sample_hour) %>%
+      summarise(hourly_q_cfs = median(q_cfs, na.rm = TRUE)) %>%
+      pull(hourly_q_cfs)
+
+  
+  final_q <- tibble(Date, DT_mst,flow_gauge_id, hourly_q_cfs)
+  
+  return(final_q)
+
+  }
+
+q_for_chem <- most_recent_chem %>%
+  select(Date, site_code, DT_mst, flow_gauge_source, flow_gauge_id)%>%
+  pmap(gather_q_for_sample)%>%
+  bind_rows()%>%
+  filter(!is.na(hourly_q_cfs))
+
+
+ most_recent_chem <- most_recent_chem%>%
+  left_join(q_for_chem%>%select(hourly_q_cfs, DT_mst, flow_gauge_id), by = c("DT_mst", "flow_gauge_id"))
+
+
+```
+
+
+
+# Pull in CSU verified data
+
+Sensor data was pulled in by ROSS via the workflow in the repository `poudre_sonde_network/virridy/non_targets_workflow`: [link](https://github.com/rossyndicate/poudre_sonde_network)
+
+After being passed through automatic QA/QC, the data was then verified by ROSS team members to remove additional erronous data. The workflow for this step is available in the repository `poudre_sonde_network/virridy/verification_workflow`
+
+Contact Katie Willi or Juan De La Torre for QAQC/verification workflow details. 
+
+```{r}
+
+
+# directory with verified data
+ver_dir <- "data/verified_sensor_data/"
+
+# List all files in the directory with full paths
+ver_files <- list.files(ver_dir, full.names = TRUE)
+
+# Function to process each file
+grab_verified_data <- function(file_path) {
+  # Extract the site name using the gsub method
+  site_name <- gsub(paste0(ver_dir, "/"), "", file_path) %>% gsub("-.*", "", .)
+  
+  # Read the data and transform it
+  single_site_param <- readRDS(file_path) %>%
+    #exclude data that did not pass verification
+    filter(!is.na(mean_verified))%>%
+    select(DT_round, parameter, mean_verified) %>%
+    mutate(site = site_name)
+  
+  return(single_site_param)
+}
+
+# Apply process_file function to each file and combine the results
+sensor_data <- map_dfr(ver_files, grab_verified_data)%>%
+  mutate(date = as.Date(DT_round, tz = "MST")) 
+
+# wide_sensor_data <- sensor_data%>%
+#   pivot_wider(names_from = parameter, values_from = mean_verified, id_cols = c(site, DT_round))%>%
+#   #create date for match up
+#         mutate(date = as.Date(DT_round, tz = "MST")) 
+
+
+
+rm(ver_dir, ver_files, grab_verified_data, sensor_meta)
+```
+
+
+
+
+# Joining grab and sensor data
+
+The current method looks at the verified data (erronous data removed already) and grabs the nearest four data points AFTER the grab sample was taken on the same day of sampling. If this data is not available (ie. Sonde was removed from field or was not recording ), data points preceeding the sampling are chosen.
+
+If you wish to change the number of data points to grab, change the value of `data_points` in the chunk below. 
+
+```{r}
+####----Change n = 4 to the number of points you want to be selected----#####
+data_points <- 4 
+
+  merge_grab_sensor <- function( grab_dt, site_select){
+    # convert to date to filter sensor data to only data on same date as sample
+    grab_date = as.Date(grab_dt, tz = "MST")
+    
+    site_sonde_data <- sensor_data %>%
+      filter(site == site_select & date == grab_date)
+    
+     if(nrow(site_sonde_data) == 0){
+       return(NULL)
+    }
+      #get the available parameters for this site
+      params <- unique(site_sonde_data$parameter)
+      
+      #fucntion to grab the nearest four datapoints to the grab sample (on the same day)
+      grab_param_data <- function(sonde_data, parameter_arg){
+        #filter to just the parameter of interest
+        param_data <- sonde_data %>%
+        filter(parameter == parameter_arg)%>%
+          dplyr::arrange(DT_round)
+     # grab data for each parameter after a sample was collected 
+      after_data <- param_data %>%
+        filter(DT_round >= grab_dt )%>%
+        # grab the data 4 data points after a sample was collected
+        dplyr::slice_head(n = data_points)
+      
+#grab data before grab sample time, this is to be used for when a sonde was removed, essentially reference data prior to the sonde being pulled rather than after
+        before_data <- param_data %>%
+          filter(DT_round < grab_dt )%>%
+          # grab the data missing data points from after_data to make sure we have 4 data points (if there are already 4 then this will not grab any points before the sample collection)
+####----Change 4 to the number of points you want to be selected----#####
+          
+          dplyr::slice_tail(n = (data_points- nrow(after_data)) )
+        
+        #bind data together
+        select_param_data <- bind_rows(before_data, after_data)%>%
+          mutate(site = site_select, grab_dt = grab_dt)
+        return(select_param_data)
+      }
+      #grab sensor data for all available parameters
+      select_sensor_data <- map(params, ~grab_param_data(sonde_data = site_sonde_data, 
+                                                         parameter_arg = .x))%>%
+        bind_rows()
+
+#if no match up is found (should be caught earlier), return nothing
+        if(nrow(select_sensor_data) == 0){
+       return(NULL)
+          
+        }else{
+    
+    select_sensor_data%>%
+      group_by(parameter)%>%
+       # take the median of all sensor values
+       summarise_if(is.numeric, median, na.rm = TRUE)%>%
+         rename(median = mean_verified)%>%
+         pivot_wider(names_from = parameter, values_from = median)%>%
+       #add site and grab_dt back in
+       mutate(site = site_select, grab_dt = grab_dt, 
+              sonde_data_from = ifelse(grepl("virridy", site_select) == TRUE, "virridy", "csu or single sonde"))%>%
+            #add all the sensor data used for future reference
+            bind_cols(nest(select_sensor_data))
+      }
+    
+  }
+
+#sites with sensors at them   
+sites <- c("JOEI", "CBRI", "CHD", 
+           "PFAL", "SFM", "LBEA", "PENN", 
+           "PBD", "lincoln", "timberline", "prospect","boxelder",  "archery", 
+           "boxcreek", "springcreek")
+
+#Only grab samples which are at sensor sites
+lab_data_at_sensors <- most_recent_chem%>%
+  #remove data before sensor data starts
+  filter( site_code %in% sites, Year >= 2023)%>%
+  #lower case to match sensor data
+  mutate(site_code = tolower(site_code), 
+         grab_dt = round_date(DT_mst, "15 minutes"))%>%
+  #grab 
+  select(site_code, grab_dt, Turbidity:SO4, Field_DO_mgL,Field_Cond_µS_cm,Field_Temp_C, flow_gauge_source, flow_gauge_id, hourly_q_cfs )%>%
+  rename(lab_pH = pH, lab_turbidity = Turbidity)%>%
+  #add in duplicate rows for when a site sampled has a virridy and csu sonde
+  {bind_rows( {.}, {.} %>% filter(site_code %in% c("archery", "timberline", "prospect"))%>%
+      mutate(site_code = paste0(site_code, " virridy"))
+  )}
+
+
+
+
+      
+  correlated_df <- lab_data_at_sensors%>%
+    #grab only dt and site from discrete samples for calculate avg fucn
+    select(grab_dt, site_select = site_code)%>%
+    # map over calc avg fucn
+    pmap_dfr(., merge_grab_sensor)%>%
+    #remove any rows that have no sensor data
+    filter(rowSums(!is.na(select(., -grab_dt, -site, -sonde_data_from))) > 0)%>%
+    # join back in lab data by site and grab dt
+    left_join(lab_data_at_sensors, by = c("grab_dt", "site" = "site_code"))
+  
+  
+  tidy_correlated_df <- correlated_df%>%
+    #remove sites with no sensor data
+     filter(map_lgl(data, ~!is.null(.)))%>%
+    filter(!is.null(data))%>%
+    select(site, grab_dt, data, everything())%>%
+    arrange(site, grab_dt)
+  
+  
+
+  rm(sites, correlated_df, merge_grab_sensor, lab_data_at_sensors)
+```
+
+# Save data to combined folder
+
+```{r}
+
+date <- format(Sys.Date(), "%Y%m%d")  
+write_rds(tidy_correlated_df, paste0("data/combined/correlated_data_run_", date,".rds"))
+  
+```
+
+
+
+
+
